@@ -1,0 +1,14 @@
+*.pyc
+__pycache__/
+build/
+*.egg-info/
+dist/
+*.so
+*.c
+old_*
+.ipynb_checkpoints/
+test/
+*.dc
+*.png
+*.ce
+*.csv

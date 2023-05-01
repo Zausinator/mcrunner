@@ -1,0 +1,25 @@
+{
+  "name":     "mcrunner",
+  "packages": ["mcrunner"],
+  "author":   "Nicolas Bergmann, Nicolas G. Hoermann",
+  "author_email": "bergmann@fhi-berlin.mpg.de",
+  "description": "Wrapper for the mchammer and Icet Monte Carlo packages",
+  "url":  "",
+  "license": "FHI",
+  "classifiers": [
+    "Programming Language :: Python",
+    "Intended Audience :: Science/Research",
+    "Natural Language :: English"
+  ],
+  "version": "1.0.0",
+  "include_package_data": true,
+  "setup_requires": [
+  ],
+  "python_requires": ">=3.8.0",
+  "install_requires": [
+    "ase>=1.0.0",
+    "icet>=2.2.0",
+    "numpy>=1.0.0",
+    "pandas>=1.0.0"
+  ]
+}
