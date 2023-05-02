@@ -21,39 +21,37 @@ from multiprocessing import Pool
 
 class MCRunner():
 
-
     def __init__(self):
         """
         """
-        self.batch_kwargs = {}
-        self.mc_args = {}
+        self._batch_kwargs = {}
+        self._mc_args = {}
         return None
 
     def _update_mc_args(self):
-
         mc_arg_keys = ['init_type', 'ads_species', 'size', 'temperature', 
-                       'steps', 'prob_threshold'
+                       'steps', 'prob_threshold', 'from_read', 'strucname'
                        ]
-        for key in self.batch_kwargs:
+        for key in self._batch_kwargs:
             if key in mc_arg_keys:
-                self.mc_args[key] = self.batch_kwargs.pop(key)
+                self._mc_args[key] = self._batch_kwargs.pop(key)
         return None
 
     @property
     def mc_args(self):
-        return self.mc_args
+        return self._mc_args
     
     @mc_args.setter
     def mc_args(self, kwargs : dict):
-        self.mc_kwargs.update(kwargs)
+        self._mc_args.update(kwargs)
     
     @property
     def batch_kwargs(self):
-        return self.batch_kwargs
+        return self._batch_kwargs
 
     @batch_kwargs.setter
     def batch_kwargs(self, kwargs : dict):
-        self.batch_kwargs.update(kwargs)
+        self._batch_kwargs.update(kwargs)
         self._update_mc_args()
 
     @staticmethod
@@ -115,14 +113,7 @@ class MCRunner():
 
 
     @staticmethod
-    def run_single_mc(
-            ce_file : str,
-            out_file : str,
-            delta_mu : list,
-            from_read : bool = False,
-            strucname : str = "",
-            **mc_args
-        ):
+    def run_single_mc(mc_args):
         """
         Runs a Monte Carlo Simulation on a single Core
         
@@ -140,15 +131,17 @@ class MCRunner():
             Should the initial structure be read from an ase readable file
             if True requires additional kwarg strucname
         """
-        ce = ClusterExpansion.read(ce_file)
-
         ads_species = mc_args.get('ads_species')
-        delta_mu    = mc_args.get('dmu')
+        delta_mu = mc_args.get('delta_mu')
         chemical_potentials = {
             ads: delta_mu[i] for i, ads in enumerate(ads_species)
         }
 
+        ce = ClusterExpansion.read(mc_args.get('ce_file'))
+
+        from_read = mc_args.get('from_read', False)
         if from_read:
+            strucname = mc_args.get('strucname', "")
             structure   = MCRunner.read_initial_struc(strucname)
         else:
             size        = mc_args.get('size')
@@ -163,7 +156,7 @@ class MCRunner():
             structure=structure,
             calculator=calculator,
             temperature=mc_args.get('temperature'),
-            dc_filename=out_file,
+            dc_filename=mc_args.get('out_file'),
             chemical_potentials=chemical_potentials,
             prob_threshold=mc_args.get('prob_threshold')
         )
@@ -194,29 +187,29 @@ class MCRunner():
         n_cores, int
             Number of cores over which multiprocessing Pools over
         """
-       
-        out_dir = self.batch_kwargs.pop("out_dir")
+        out_dir = self._batch_kwargs.pop("out_dir")
         # Make sure output directory exists
         if not os.path.exists(out_dir):
             os.mkdir(out_dir)
             
-        log_file = self.batch_kwargs.pop(
+        log_file = self._batch_kwargs.pop(
             'log_file', os.path.join(out_dir, 'log.json')
         )
+        
         if os.path.isfile(log_file):
             raise ValueError("log file already exists! Aborting now...")
 
         count           = 0
-        n_repeats       = self.batch_kwargs.get('n_repeats')
+        n_repeats       = self._batch_kwargs.get('n_repeats')
         args = []
         for i in range(n_repeats):
             for j in ce_df.index:
                 # Here we also want to go up to 0.001 V resolution on the x axis
                 row = cp(ce_df.loc[j])
-                mc_run_args = cp(self.mc_args)
+                mc_run_args = cp(self._mc_args)
                 mc_run_args['ce_file']  = row['filename']
                 mc_run_args['out_file'] = f'{out_dir}/run_{count}.dc'
-                mc_run_args['dmu']      = delta_mu
+                mc_run_args['delta_mu'] = delta_mu
                 mc_run_args['repeat']   = i
                 mc_run_args['file_idx'] = count
                 mc_run_args['ref']      = row['ref']
