@@ -86,7 +86,7 @@ class MCParser:
             raise ValueError("Length of outfiles does not match equi length")
         
         for outfile in outfiles:
-            if not os.path.exists(outfile):
+            if not os.path.exists(os.path.split(outfile)[0]):
                 raise ValueError("Path to outfile does not exist!")
         
         ads_species = set(dc_log_df['ads_species'].sum())
