@@ -1,103 +1,131 @@
-import os, sys
+import os 
+import numpy as np 
 import pandas as pd
+
+from copy import deepcopy as cp
 
 from mchammer import DataContainer
 from multiprocessing import Pool
 
 
-def analyse_single_mc_run(kwargs):
-    #Set the default settings for output files and such
-    ensemble    = kwargs.get("ensemble", "sgc")
-    filename    = kwargs.get('filename')
+class MCParser:
 
-    dc = DataContainer.read(filename)
+    def __init__(self):
+        return None
+    
+    @staticmethod
+    def parse_single_mc_run(args):
+        """
+        Parse a single Monte Carlo run on one core, for a detailed description
+        of the arguments see `analyze_batch_mc_runs`
+        """
+        ensemble    = args.get('ensemble')
+        dc_file     = args.get('dc_file')
 
-    data_row = dc.ensemble_parameters
-    data_row['filename'] = filename
-    n_atoms = data_row['n_atoms']
+        dc = DataContainer.read(dc_file)
+        data_row = dc.ensemble_parameters
+        data_row['filename'] = dc_file
+        n_atoms = data_row['n_atoms']
 
-    #Equilibration should be ca. 308 steps per site, worth a check
-    equilibration = kwargs.get("equilibration", 100000)
+        equis = args.get('equilibration')
+        if not isinstance(equis, list):
+            equis = [equis]
 
-    ads = kwargs.get("ads")
+        equis = [int(i * args['steps']) for i in equis]
+        
+        ads_species = args.get('ads_species')
+        if isinstance(ads_species, set):
+            ads_species = list(ads_species)
 
-    for ad in ads:
-        stats = dc.analyze_data(f'{ad}_count', start=equilibration)
-        data_row[f'{ad}_cov']          = stats['mean'] / n_atoms
-        data_row[f'{ad}_cov_std']      = stats['std'] / n_atoms
-        data_row[f'{ad}_cov_error']    = stats['error_estimate'] / n_atoms
+        data_rows = []
+        for equi in equis:
+            dr = cp(data_row)
+            dr['pot'] = args['pot']
+            dr['ref'] = args['ref']
+            dr['steps'] = args['steps']
+            dr['size'] = args['size']
+            dr['repeat'] = args['repeat']
+            dr['cov'] = 0.
+            for ads in ads_species:
+                stats = dc.analyze_data(f'{ads}_count', start=equi)
+                dr[f'{ads}_cov']        = stats['mean'] / n_atoms
+                dr[f'{ads}_cov_std']    = stats['std'] / n_atoms
+                dr[f'{ads}_cov_error']  = stats['error_estimate'] / n_atoms
+                dr['cov'] += dr[f'{ads}_cov']
 
-    stats = dc.analyze_data('potential', start=equilibration)
-    data_row['e_per_site']          = stats['mean'] / n_atoms
-    data_row['e_per_site_std']      = stats['std'] / n_atoms
-    data_row['e_per_site_error']    = stats['error_estimate'] / n_atoms
+            stats = dc.analyze_data('potential', start=equi)
+            dr['e_per_site']        = stats['mean'] / n_atoms
+            dr['e_per_site_std']    = stats['std'] / n_atoms
+            dr['e_per_site_error']  = stats['error_estimate'] / n_atoms
 
-    data_row['acceptance_ratio'] = \
-        dc.get_average('acceptance_ratio', start=equilibration)
-    if ensemble == 'sgc':
-        data_row['free_energy_derivative'] = - data_row['mu_X']
-        for ad in ads:
-            data_row['free_energy_derivative'] += data_row[f'mu_{ad}']
-    elif ensemble == 'vcsgc':
-        data_row['free_energy_derivative'] = \
-            dc.get_average('free_energy_derivative_Pd', start=equilibration)
-    return data_row
+            dr['acceptance_ratio'] = dc.get_average('acceptance_ratio', start=equi)
 
+            if ensemble == 'sgc':
+                dr['free_energy_derivative'] = -1. * dr['mu_X']
+                for ads in ads_species:
+                    dr['free_energy_derivative'] += dr[f'mu_{ads}']
+            elif ensemble == 'vcsgc':
+                dr['free_energy_derivative'] = \
+                    dc.get_average('free_energy_derivative_Pd', star=equi)
+            dr['equilibration'] = equi
+            data_rows.append(dr)
+        return data_rows
+    
+    def parse_batch_mc_runs(self,
+                            dc_log_df,
+                            equis : list,
+                            outfiles : list,
+                            n_cores : int,
+                            ensemble : str = 'sgc'
+                            ):
+        """
+        Parse all the Monte Carlo runs described in a logfile created by the 
+        MCRunner class
+        """
+        if not len(outfiles) == len(equis):
+            raise ValueError("Length of outfiles does not match equi length")
+        
+        for outfile in outfiles:
+            if not os.path.exists(outfile):
+                raise ValueError("Path to outfile does not exist!")
+        
+        ads_species = set(dc_log_df['ads_species'].sum())
+        ads_species.remove('X')
 
-def analyze_batch_mc_runs(**kwargs):
+        args = []
+        for i in dc_log_df.index:
+            row = dc_log_df.loc[i]
+            run_args = {
+                'ads_species':  ads_species,
+                'dc_file':      row['out_file'],
+                'ensemble':     ensemble,
+                'equilibration':equis,
+                'pot':          row['pot'],
+                'ref':          row['ref'],
+                'steps':        row['steps'],
+                'size':         row['size'],
+                'repeat':       row['repeat']
+            }
+            args.append(run_args)
 
-    # Define directory hierarchy and outputfile location-name
-    data_dir = kwargs.pop("data_dir")
-    if not os.path.exists(data_dir):
-        raise ValueError("Data directory does not exist yet")
-    outfile = kwargs.pop("outfile", os.path.join(data_dir, "results.json"))
+        pool = Pool(processes=n_cores)
+        results = pool.map_async(MCParser.parse_single_mc_run, args)
 
-    # Define the mpi multiprocessing parameters?
-    processes = kwargs.pop("processes", 20)
-
-    files = [f"{data_dir}/{i}" for i in os.listdir(data_dir) if i.endswith(".dc")]
-    pool_args = [{"filename": i, **kwargs} for i in files]
-
-    pool = Pool(processes=processes)
-    results = pool.map_async(analyse_single_mc_run, pool_args)
-
-    # Store the results in a pandas dataframe object
-    data = [data_row for data_row in results.get()]
-    df = pd.DataFrame(data)
-    df['cov'] = df[[f'{ad}_cov' for ad in kwargs.get('ads')]].sum(axis=1)
-    df['Br_cov_error']      = df['Br_cov_error'].fillna(0.)
-    df['e_per_site_error']  = df['e_per_site_error'].fillna(0.)
-    df = df.sort_values("mu_Br", ascending=True).reset_index(drop=True)
-    if outfile.endswith('.json'):
-        df.to_json(outfile)
-    elif outfile.endswith('.csv'):
-        df.to_csv(outfile, sep='\t')
-    else:
-        raise ValueError("Do not know how you want to save the outfile!")
-    return df
-
-
-def main(verbose=False):
-    n_steps = 10**8
-    n_cores = 30 
-
-    ads = ['Br']
-    swap_rate = 0.75
-    equi = 0.99
-    data_dir = f'./run'
-
-    equilibration = int(equi * n_steps)
-    kwargs = {
-        "ads":              ads,
-        "data_dir":         data_dir,
-        "equilibration":    equilibration,
-        "ensemble":         "sgc",
-        "processes":        n_cores,
-        "outfile":          os.path.join(data_dir, f'results_{equi}_equi.json')
-    }
-    df = analyze_batch_mc_runs(**kwargs)
-    return None
-
-
-if __name__ == '__main__':
-    main()
+        # Store the results in a pandas dataframe object
+        data = np.array([data_row for data_row in results.get()], dtype='object')
+        dfs = []
+        for i, equi in enumerate(equis):
+            df = (pd.DataFrame(data[:, i].tolist())
+                  .fillna(0.)
+                  .sort_values(['pot', 'repeat'], ascending=True)
+                  .reset_index(drop=True)
+                  )
+            df['equi'] = equi
+            if outfiles[i].endswith('.json'):
+                df.to_json(outfiles[i])
+            elif outfiles[i].endswith('.csv'):
+                df.to_csv(outfiles[i], sep='\t')
+            else:
+                raise ValueError("Do not know how you want to save the outfile!")
+            dfs.append(df)
+        return dfs 
