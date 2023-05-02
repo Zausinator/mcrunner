@@ -1,4 +1,3 @@
-import json, os
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -213,49 +212,3 @@ def view_hull(CE, cluster_style, sizerange = [4*4]):
                 done.append(conc)
         if sorted(done) == sorted(cl):
             break
-
-#These are just some helper functions to create list of structures with defects and some energies
-
-
-def main():
-    r2 = 4.3
-    data_dir    = 'patterns'
-
-    parent_CE_dir = f'CEs_{r2:.1f}'
-    if not os.path.exists(parent_CE_dir):
-        os.mkdir(parent_CE_dir)
-    for i in range(1):
-        CE_dir      = f'CE_at_applied_potential'
-        if not os.path.exists(f"{parent_CE_dir}/{CE_dir}"):
-            os.mkdir(f"{parent_CE_dir}/{CE_dir}")
-
-        data_df     = pd.read_json(f'{data_dir}/log.json')#, lines=True)
-        ads_species = ['Br', 'X']
-
-        CE = ClusterExpansionCreator()
-        for j in data_df.index:
-            row = data_df.loc[j]
-            idx = row['idx']
-
-            struc_file  = f"{data_dir}/{row['filename']}"
-            ce_file     = f'{CE_dir}/pot_{idx}.ce'
-            CE.get_CE(struc_file, [r2], ads_species=ads_species)
-            CE.write_CE(f"{parent_CE_dir}/{ce_file}")
-
-            info_dict = {
-                "idx":      int(idx),
-                "filename": ce_file,
-                "ref":      row["ref"],
-                "pot":      row["pot"],
-                "2b":       float(r2)
-            }
-            with open(f"{parent_CE_dir}/{CE_dir}/log.json", "a") as f:
-                json.dump(info_dict, f)
-                f.write("\n")
-    return None
-
-
-if __name__ == '__main__':
-    from plot_defaults import set_presentation_params
-    set_presentation_params()
-    main()
