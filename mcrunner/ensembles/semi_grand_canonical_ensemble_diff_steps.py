@@ -9,8 +9,8 @@ class SemiGrandCanonicalEnsemble_Diffsteps(SemiGrandCanonicalEnsemble):
     Adds possible diffusion steps to the SGC Ensemble from mchammer
     """
 
-    def __init__(self, prob_threshold=0.75):
-        super().__init__()
+    def __init__(self, prob_threshold=0.75, **kwargs):
+        super().__init__(**kwargs)
         self._prob_threshold = prob_threshold
 
 
