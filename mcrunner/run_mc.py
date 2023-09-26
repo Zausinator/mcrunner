@@ -11,6 +11,8 @@ from copy import deepcopy as cp
 
 from icet import ClusterExpansion
 
+from typing import Union
+
 from .ensembles import SemiGrandCanonicalEnsemble_Diffsteps
 
 from mchammer.calculators import ClusterExpansionCalculator
@@ -168,7 +170,7 @@ class MCRunner():
 
     def run_batch_mcs(self,
                       ce_df : pd.DataFrame,
-                      delta_mu: list,
+                      delta_mu: Union[list, None],
                       n_cores : int
         ):
         """
@@ -179,11 +181,13 @@ class MCRunner():
         ce_df, pd.DataFrame (required columns: 'filename', 'ref', 'pot')
             DataFrame containing the paths to the cluster expansion files
             and the reference electrode and potential they were measured for
-        delta_mu: list,
+        delta_mu: list or None,
             List of floats as long as the ads_species in the cluster expansion
             We assume here that this value doesn't change throughout all 
             monte carlo runs, meaning that all necessary experimental 
             parameters have already been set during the cluster expansion fit
+            if Nonetype, we search for the delta_mu within the dataframe as 
+            column named 'delta_mu'
         n_cores, int
             Number of cores over which multiprocessing Pools over
         """
@@ -195,6 +199,11 @@ class MCRunner():
         log_file = self._batch_kwargs.pop(
             'log_file', os.path.join(out_dir, 'log.json')
         )
+
+        if isinstance(delta_mu, list):
+            delta_mus = [delta_mu for i in range(ce_df.shape[0])]
+        else:
+            delta_mus = [ce_df.loc[i]['delta_mu'] for i in range(ce_df.shape[0])]
         
         if os.path.isfile(log_file):
             raise ValueError("log file already exists! Aborting now...")
@@ -204,12 +213,11 @@ class MCRunner():
         args = []
         for i in range(n_repeats):
             for j in ce_df.index:
-                # Here we also want to go up to 0.001 V resolution on the x axis
                 row = cp(ce_df.loc[j])
                 mc_run_args = cp(self._mc_args)
                 mc_run_args['ce_file']  = row['filename']
                 mc_run_args['out_file'] = f'{out_dir}/run_{count}.dc'
-                mc_run_args['delta_mu'] = delta_mu
+                mc_run_args['delta_mu'] = delta_mus[j]
                 mc_run_args['repeat']   = i
                 mc_run_args['file_idx'] = count
                 mc_run_args['ref']      = row['ref']
