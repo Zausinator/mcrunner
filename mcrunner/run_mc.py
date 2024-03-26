@@ -83,6 +83,9 @@ class MCRunner():
                         1 * np.array([[size, 0, 0],
                                         [0, size, 0],
                                         [0, 0, 1]]))
+        if init_type == 'bare':
+            structure.set_chemical_symbols(['X'] * len(structure))
+            return structure
         n_species = len(ads_species)
         # Determines how the sites get occupied
         occ = []
@@ -100,7 +103,7 @@ class MCRunner():
                         occ.append(0)
                 else:
                     occ.append(np.random.randint(n_species))
-
+                    
         structure.set_chemical_symbols([ads_species[o] for o in occ ])
         return structure
     

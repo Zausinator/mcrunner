@@ -129,3 +129,107 @@ class MCParser:
                 raise ValueError("Do not know how you want to save the outfile!")
             dfs.append(df)
         return dfs 
+    
+    @staticmethod
+    def parse_single_coverage_development(args):
+        """
+        """
+        ensemble    = args.get('ensemble')
+        dc_file     = args.get('dc_file')
+
+        dc = DataContainer.read(dc_file)
+        data_row = dc.ensemble_parameters
+        data_row['filename'] = dc_file
+        n_atoms = data_row['n_atoms']
+
+        data = dc.data
+
+        equis = args.get('equilibration')
+        if not isinstance(equis, list):
+            equis = [equis]
+
+        equis = [int(i * args['steps']) for i in equis]
+        
+        ads_species = args.get('ads_species')
+        if isinstance(ads_species, set):
+            ads_species = list(ads_species)
+
+        keep_cols = [f'{i}_count' for i in ads_species]
+        data_rows = []
+        for equi in equis:
+            stats = data[data['mctrial'] >= equi].reset_index(drop=True).copy()
+            stats[keep_cols] /= n_atoms
+            stats = stats.set_index('mctrial')[keep_cols].T.reset_index()
+            stats['ads'] = stats['index'].str.extract(r'([A-Za-z]+)_count')
+            stats = stats.drop('index', axis=1)
+            
+            stats['pot']    = args['pot']
+            stats['ref']    = args['ref']
+            stats['steps']  = args['steps']
+            stats['size']   = args['size']
+            stats['repeat'] = args['repeat']
+            
+            data_rows.append(stats)
+        return data_rows
+
+    def parse_batch_coverage_development(self,
+                            dc_log_df,
+                            equis : list,
+                            outfiles : list,
+                            n_cores : int,
+                            ensemble : str = 'sgc'
+                            ):
+        """
+        Create dataframes where the coverage of all species is shown in relation
+        to the number of MC steps
+        """
+        if not len(outfiles) == len(equis):
+            raise ValueError("Length of outfiles does not match equi length")
+        
+        for outfile in outfiles:
+            if not os.path.exists(os.path.split(outfile)[0]):
+                raise ValueError("Path to outfile does not exist!")
+        
+        ads_species = set(dc_log_df['ads_species'].sum())
+        ads_species.remove('X')
+
+        args = []
+        for i in dc_log_df.index:
+            row = dc_log_df.loc[i]
+            run_args = {
+                'ads_species':  ads_species,
+                'dc_file':      row['out_file'],
+                'ensemble':     ensemble,
+                'equilibration':equis,
+                'pot':          row['pot'],
+                'ref':          row['ref'],
+                'steps':        row['steps'],
+                'size':         row['size'],
+                'repeat':       row['repeat']
+            }
+            args.append(run_args)
+
+        pool = Pool(processes=n_cores)
+        results = pool.map_async(MCParser.parse_single_coverage_development, args)
+
+        # Store the results in a pandas dataframe object
+        data = [i for i in results.get()]
+        dfs = [pd.DataFrame() for i in equis]
+        for i, run in enumerate(data):
+            for j, equi in enumerate(equis):
+                dfs[j] = pd.concat([dfs[j], data[i][j]], ignore_index=True)
+        
+        for i, equi in enumerate(equis):
+            dfs[i] = (dfs[i]
+                      .sort_values(['pot', 'repeat'], ascending=True)
+                      .reset_index(drop=True)
+                     )
+            dfs[i]['equi'] = equi
+            if outfiles[i].endswith('.json'):
+                dfs[i].to_json(outfiles[i])
+            elif outfiles[i].endswith('.csv'):
+                dfs[i].to_csv(outfiles[i], sep='\t')
+            else:
+                raise ValueError("Do not know how you want to save the outfile!")
+            
+        return dfs 
