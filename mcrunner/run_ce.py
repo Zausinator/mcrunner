@@ -60,7 +60,10 @@ class ClusterExpansionCreator():
             raise ValueError("Do not understand more than 3 interaction types")
 
         # Define the cluster_space for the ClusterExpansion
-        chemical_symbols = [self.ads_species for i in self.clean_slab]
+        if isinstance(self.ads_species[0], str):
+            chemical_symbols = [self.ads_species for i in self.clean_slab]
+        else:
+            chemical_symbols = self.ads_species
         self.cluster_space = ClusterSpace(
             structure=self.clean_slab, cutoffs=self.cutoffs,
             chemical_symbols=chemical_symbols,
@@ -91,6 +94,7 @@ class ClusterExpansionCreator():
             fit_data = self.sc.get_fit_data(key='per_site_energy'),
             **kwargs.get("CV_kwargs", {})
         )
+        opt.validate()
         opt.train()
         if self._verbose:
             print("OPTIMIZED CROSSVALIDATION:\n")
@@ -104,7 +108,7 @@ class ClusterExpansionCreator():
         if self._verbose:
             print("CREATED CLUSTER EXPANSION: \n")
             print(self.ce)
-        return None
+        return opt
 
 
     def write_CE(self, filename):
